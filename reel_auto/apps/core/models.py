@@ -1,0 +1,91 @@
+from django.db import models
+
+class SearchTask(models.Model):
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Дата создания"
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ('pending', 'В очереди'),
+            ('processing', 'Обрабатывается'),
+            ('done', 'Завершено'),
+            ('error', 'Ошибка')
+        ],
+        default='pending',
+        verbose_name="Статус"
+    )
+
+    views_from = models.PositiveIntegerField(
+        null=True, blank=True,
+        verbose_name="Минимум просмотров"
+    )
+
+    likes_from = models.PositiveIntegerField(
+        null=True, blank=True,
+        verbose_name="Минимум лайков"
+    )
+
+    comments_from = models.PositiveIntegerField(
+        null=True, blank=True,
+        verbose_name="Минимум комментариев"
+    )
+
+    date_from = models.DateField(
+        null=True, blank=True,
+        verbose_name="Дата от"
+    )
+
+    date_to = models.DateField(
+        null=True, blank=True,
+        verbose_name="Дата до"
+    )
+
+    keywords = models.TextField(
+        null=True, blank=True,
+        verbose_name="Ключевые слова или хэштеги"
+    )
+
+    csv_file = models.FileField(
+        upload_to='exports/',
+        null=True, blank=True,
+        verbose_name="Готовый CSV-файл"
+    )
+
+    error_message = models.TextField(
+        blank=True, null=True,
+        verbose_name="Сообщение об ошибке"
+    )
+
+    def __str__(self):
+        return f"Задача #{self.id} от {self.created_at.strftime('%Y-%m-%d %H:%M')}"
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "Задача поиска"
+        verbose_name_plural = "Задачи поиска"
+
+
+class SearchResult(models.Model):
+    task = models.ForeignKey(
+        SearchTask,
+        on_delete=models.CASCADE,
+        related_name='results',
+        verbose_name="Задача"
+    )
+
+    video_url = models.URLField(verbose_name="Ссылка на видео")
+    author_username = models.CharField(max_length=255, verbose_name="Никнейм автора")
+    published_at = models.DateTimeField(verbose_name="Дата публикации")
+    description = models.TextField(blank=True, verbose_name="Описание поста")
+    hashtags = models.TextField(blank=True, verbose_name="Хэштеги")
+    views = models.PositiveIntegerField(verbose_name="Количество просмотров")
+    likes = models.PositiveIntegerField(verbose_name="Количество лайков")
+    comments = models.PositiveIntegerField(verbose_name="Количество комментариев")
+    sound_url = models.URLField(blank=True, null=True, verbose_name="Ссылка на звук")
+
+    class Meta:
+        verbose_name = "Найденный Reels"
+        verbose_name_plural = "Найденные Reels"
