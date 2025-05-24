@@ -29,6 +29,9 @@ class ReelsFetcher:
         for media in medias:
             data = media.dict()
 
+            # logger.debug("Media raw data: %s", str(data)[:2000])
+            logger.debug("Media author: %s | media_type: %s", data.get("user", {}).get("username"), data.get("media_type"))
+
             if not data.get("video_url"):
                 logger.debug("Пропуск: нет video_url")
                 continue
@@ -53,7 +56,7 @@ class ReelsFetcher:
             if date_from and created.date() < date_from:
                 logger.debug("Пропуск: слишком старая дата")
                 continue
-            
+
             if date_to and created.date() > date_to:
                 logger.debug("Пропуск: слишком новая дата")
                 continue

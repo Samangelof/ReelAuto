@@ -164,7 +164,7 @@ LOGGING = {
         },
         "django.db.backends": {
             "handlers": ["debug_file"] if DEBUG else [],
-            "level": "DEBUG",
+            "level": "INFO",
             "propagate": False,
         },
         "django.request": {
@@ -204,7 +204,17 @@ JAZZMIN_SETTINGS = {
     },
     "changeform_format": "horizontal_tabs",
     "related_modal_active": True,
+    "hide_models": ["auth.user", "auth.group"],     # Скрываю поля в сайдбаре (Пользователи и группы)
+
 }
+
+
+# ------------------------------------------------
+# Celery
+CELERY_BROKER_URL = "redis://127.0.0.1:6379/0"
+CELERY_RESULT_BACKEND = "redis://127.0.0.1:6379/0"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json" 
 
 
 # ------------------------------------------------

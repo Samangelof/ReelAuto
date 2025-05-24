@@ -16,7 +16,7 @@ from datetime import date
 fetcher = ReelsFetcher()
 
 results = fetcher.fetch_by_hashtag(
-    hashtag="travel",
+    hashtag="mature",
     min_views=0,
     min_likes=0,
     min_comments=0,

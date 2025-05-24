@@ -60,12 +60,12 @@ class SearchTask(models.Model):
     )
 
     def __str__(self):
-        return f"Задача #{self.id} от {self.created_at.strftime('%Y-%m-%d %H:%M')}"
+        return f"Поиск по: {self.keywords} | #{self.id} | от {self.created_at.strftime('%Y-%m-%d %H:%M')}"
 
     class Meta:
         ordering = ['-created_at']
-        verbose_name = "Задача поиска"
-        verbose_name_plural = "Задачи поиска"
+        verbose_name = "Поиск reel"
+        verbose_name_plural = "Поиск reels"
 
 
 class SearchResult(models.Model):
@@ -76,7 +76,7 @@ class SearchResult(models.Model):
         verbose_name="Задача"
     )
 
-    video_url = models.URLField(verbose_name="Ссылка на видео")
+    video_url = models.URLField(max_length=2048, verbose_name="Ссылка на видео")
     author_username = models.CharField(max_length=255, verbose_name="Никнейм автора")
     published_at = models.DateTimeField(verbose_name="Дата публикации")
     description = models.TextField(blank=True, verbose_name="Описание поста")
@@ -84,7 +84,7 @@ class SearchResult(models.Model):
     views = models.PositiveIntegerField(verbose_name="Количество просмотров")
     likes = models.PositiveIntegerField(verbose_name="Количество лайков")
     comments = models.PositiveIntegerField(verbose_name="Количество комментариев")
-    sound_url = models.URLField(blank=True, null=True, verbose_name="Ссылка на звук")
+    sound_url = models.URLField(max_length=2048, blank=True, null=True, verbose_name="Ссылка на звук")
 
     class Meta:
         verbose_name = "Найденный Reels"
