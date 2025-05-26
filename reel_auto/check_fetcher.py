@@ -9,14 +9,14 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'settings.base')
 django.setup()
 
 
-from apps.core.services.reels_fetcher import ReelsFetcher
+from reel_auto.apps.core.services.hiker_reels_processor import ReelsFetcher
 from datetime import date
 
 
 fetcher = ReelsFetcher()
 
 results = fetcher.fetch_by_hashtag(
-    hashtag="mature",
+    hashtag="bike",
     min_views=0,
     min_likes=0,
     min_comments=0,

@@ -1,10 +1,9 @@
-# apps/core/tasks.py
 from celery import shared_task
-from core.services.task_runner import run_search_task as sync_task
 from core.models import SearchTask
+from core.services.task_runner import run_task_logic
 
 
 @shared_task
-def run_search_task(task_id):
+def run_search_task_async(task_id):
     task = SearchTask.objects.get(id=task_id)
-    return sync_task(task)
+    return run_task_logic(task)

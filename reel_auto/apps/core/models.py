@@ -1,5 +1,6 @@
 from django.db import models
 
+
 class SearchTask(models.Model):
     created_at = models.DateTimeField(
         auto_now_add=True,
@@ -48,6 +49,11 @@ class SearchTask(models.Model):
         verbose_name="Ключевые слова или хэштеги"
     )
 
+    limit = models.PositiveIntegerField(
+        default=50,
+        verbose_name="Лимит на количество результатов"
+    )
+
     csv_file = models.FileField(
         upload_to='exports/',
         null=True, blank=True,
@@ -76,15 +82,19 @@ class SearchResult(models.Model):
         verbose_name="Задача"
     )
 
-    video_url = models.URLField(max_length=2048, verbose_name="Ссылка на видео")
-    author_username = models.CharField(max_length=255, verbose_name="Никнейм автора")
+    video_url = models.URLField(
+        max_length=2048, verbose_name="Ссылка на видео")
+    author_username = models.CharField(
+        max_length=255, verbose_name="Никнейм автора")
     published_at = models.DateTimeField(verbose_name="Дата публикации")
     description = models.TextField(blank=True, verbose_name="Описание поста")
     hashtags = models.TextField(blank=True, verbose_name="Хэштеги")
     views = models.PositiveIntegerField(verbose_name="Количество просмотров")
     likes = models.PositiveIntegerField(verbose_name="Количество лайков")
-    comments = models.PositiveIntegerField(verbose_name="Количество комментариев")
-    sound_url = models.URLField(max_length=2048, blank=True, null=True, verbose_name="Ссылка на звук")
+    comments = models.PositiveIntegerField(
+        verbose_name="Количество комментариев")
+    sound_url = models.URLField(
+        max_length=2048, blank=True, null=True, verbose_name="Ссылка на звук")
 
     class Meta:
         verbose_name = "Найденный Reels"

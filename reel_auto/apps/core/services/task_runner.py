@@ -1,28 +1,56 @@
 # core/services/task_runner.py
-from .reels_fetcher import ReelsFetcher
-from core.models import SearchResult
+import logging
+from core.services.hikerapi_client import HikerAPIClient
+from core.services.hiker_reels_processor import HikerReelsProcessor
+from decouple import config
 
-from io import StringIO
-from django.core.files.base import ContentFile
-import csv
+logger = logging.getLogger(__name__)
 
 
-def run_search_task(task):
-    fetcher = ReelsFetcher()
+def _extract_first_hashtag(keywords: str) -> str:
+    if not keywords:
+        return None
+    for word in keywords.split():
+        word = word.strip().strip(',')  # убрать пробелы и запятые
+        if word.startswith('#'):
+            return word[1:]
+    return None
+
+
+
+def run_task_logic(task):
+    from core.models import SearchResult
+    from io import StringIO
+    from django.core.files.base import ContentFile
+    import csv
+
+    api = HikerAPIClient(config("HIKER_API_KEY"))
+    processor = HikerReelsProcessor(api)
 
     hashtag = _extract_first_hashtag(task.keywords)
     if not hashtag:
         raise ValueError("Не указан хэштег для задачи поиска")
+    
+    logger.warning(f"[TASK #{task.id}] 🚨 Запрос к HikerAPI будет тарифицирован (~$0.02). " 
+               f"Хэштег: #{hashtag} | лимит: {task.limit} | фильтры: views>={task.views_from or 0}, "
+               f"likes>={task.likes_from or 0}, comments>={task.comments_from or 0}")
 
-    reels = fetcher.fetch_by_hashtag(
-        hashtag=hashtag,
-        min_views=task.views_from or 0,
-        min_likes=task.likes_from or 0,
-        min_comments=task.comments_from or 0,
-        date_from=task.date_from,
-        date_to=task.date_to,
-        limit=2
-    )
+
+    try:
+        reels = processor.fetch_and_filter(
+            hashtag=hashtag,
+            min_views=task.views_from or 0,
+            min_likes=task.likes_from or 0,
+            min_comments=task.comments_from or 0,
+            date_from=task.date_from,
+            date_to=task.date_to,
+            limit=task.limit
+        )
+    except Exception as e:
+        logger.exception(f"[TASK #{task.id}] Ошибка при выполнении задачи: {e}")
+        task.status = 'error'
+        task.save()
+        return 0
 
     for reel in reels:
         SearchResult.objects.create(task=task, **reel)
@@ -46,15 +74,8 @@ def run_search_task(task):
     filename = f"reels_task_{task.id}.csv"
     task.csv_file.save(filename, ContentFile(csv_buffer.getvalue().encode()), save=True)
 
+    task.status = 'done'
+    task.save()
+
+    logger.info(f"[TASK #{task.id}] Завершено. Сохранено {len(reels)} рилсов.")
     return len(reels)
-
-
-def _extract_first_hashtag(keywords: str) -> str:
-    if not keywords:
-        return None
-    for word in keywords.split():
-        word = word.strip().strip(',')  # убираем пробелы и запятые
-        if word.startswith('#'):
-            return word[1:]
-    return None
-

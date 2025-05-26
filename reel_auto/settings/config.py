@@ -12,3 +12,5 @@ USER_DATEBASE = get_env_variable('DB_USER')
 PASSWORD_DATEBASE = get_env_variable('DB_PASSWORD')
 HOST_DATEBASE = get_env_variable('DB_HOST')
 PORT_DATEBASE = get_env_variable('DB_PORT')
+
+HIKER_API_KEY = get_env_variable('HIKER_API_KEY')
