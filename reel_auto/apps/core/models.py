@@ -85,7 +85,7 @@ class SearchResult(models.Model):
     video_url = models.URLField(
         max_length=2048, verbose_name="Ссылка на видео")
     author_username = models.CharField(
-        max_length=255, verbose_name="Никнейм автора")
+        max_length=500, verbose_name="Никнейм автора")
     published_at = models.DateTimeField(verbose_name="Дата публикации")
     description = models.TextField(blank=True, verbose_name="Описание поста")
     hashtags = models.TextField(blank=True, verbose_name="Хэштеги")
@@ -99,3 +99,25 @@ class SearchResult(models.Model):
     class Meta:
         verbose_name = "Найденный Reels"
         verbose_name_plural = "Найденные Reels"
+
+
+class SearchRawResult(models.Model):
+    task = models.ForeignKey(SearchTask, on_delete=models.CASCADE, related_name="raw_results")
+    video_url = models.URLField(max_length=2048, blank=True, null=True)
+    author_username = models.CharField(max_length=500, blank=True, null=True)
+    published_at = models.DateField(null=True, blank=True)
+    description = models.TextField(blank=True, null=True)
+    hashtags = models.TextField(blank=True, null=True)
+    views = models.IntegerField(default=0)
+    likes = models.IntegerField(default=0)
+    comments = models.IntegerField(default=0)
+    sound_url = models.URLField(max_length=2048, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Сырой рилс"
+        verbose_name_plural = "Сырые рилсы"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.author_username or '—'} | {self.video_url or 'без ссылки'}"

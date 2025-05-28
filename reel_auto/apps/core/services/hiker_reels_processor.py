@@ -89,12 +89,83 @@ from .hikerapi_client import HikerAPIClient
 logger = logging.getLogger(__name__)
 
 
-
-from datetime import datetime
+def safe_truncate_data(data: dict) -> dict:
+    """Безопасно обрезает данные до лимитов БД"""
+    return {
+        "video_url": (data.get("video_url") or "")[:2048],
+        "author_username": (data.get("author_username") or "")[:500],
+        "published_at": data.get("published_at"),
+        "description": (data.get("description") or "")[:5000],
+        "hashtags": (data.get("hashtags") or "")[:2000],
+        "views": data.get("views", 0),
+        "likes": data.get("likes", 0),
+        "comments": data.get("comments", 0),
+        "sound_url": (data.get("sound_url") or "")[:2048],
+    }
 
 class HikerReelsProcessor:
     def __init__(self, api_client: HikerAPIClient):
         self.api = api_client
+
+    def _parse_reel_data(self, raw_item: dict) -> dict | None:
+        """Парсит один элемент reel в унифицированный формат"""
+        try:
+            media = raw_item.get("media", {})
+            if not media:
+                logger.warning("[PARSER] пропущено: нет блока 'media'")
+                return None
+
+            caption = media.get("caption", {})
+            description = caption.get("text", "")
+            hashtags = [w for w in description.split() if w.startswith("#")]
+            hashtags_str = " ".join(hashtags)
+
+            user = media.get("user", {})
+            video_versions = media.get("video_versions", [])
+            video_url = video_versions[0]["url"] if video_versions else ""
+            sound_url = media.get("progressive_download_url") or ""
+
+            taken_at = media.get("taken_at")
+            published_at = datetime.fromtimestamp(taken_at).date() if taken_at else None
+
+            raw_data = {
+                "video_url": video_url,
+                "author_username": user.get("username", ""),
+                "published_at": published_at,
+                "description": description,
+                "hashtags": hashtags_str,
+                "views": media.get("play_count", 0),
+                "likes": media.get("like_count", 0),
+                "comments": media.get("comment_count", 0),
+                "sound_url": sound_url,
+            }
+            
+            # Применяем безопасную обрезку
+            return safe_truncate_data(raw_data)
+            
+        except Exception as e:
+            logger.warning(f"[PARSER] ошибка при парсинге reel: {e}")
+            return None
+
+    def _passes_filters(self, reel_data: dict, min_views: int, min_likes: int, 
+                       min_comments: int, date_from, date_to) -> bool:
+        """Проверяет, проходит ли reel все фильтры"""
+        if reel_data["views"] < min_views:
+            logger.info(f"[FILTER] пропущено: views={reel_data['views']} < {min_views}")
+            return False
+        if reel_data["likes"] < min_likes:
+            logger.info(f"[FILTER] пропущено: likes={reel_data['likes']} < {min_likes}")
+            return False
+        if reel_data["comments"] < min_comments:
+            logger.info(f"[FILTER] пропущено: comments={reel_data['comments']} < {min_comments}")
+            return False
+        if date_from and reel_data["published_at"] and reel_data["published_at"] < date_from:
+            logger.info(f"[FILTER] пропущено: {reel_data['published_at']} < {date_from}")
+            return False
+        if date_to and reel_data["published_at"] and reel_data["published_at"] > date_to:
+            logger.info(f"[FILTER] пропущено: {reel_data['published_at']} > {date_to}")
+            return False
+        return True
 
     def fetch_and_filter(
         self,
@@ -106,72 +177,43 @@ class HikerReelsProcessor:
         date_from=None,
         date_to=None,
         limit=5
-    ):
-        raw = self.api.get_reels_by_hashtag(hashtag).get("items", [])
-        results = []
+    ) -> tuple[list[dict], list[dict]]:
+        """Возвращает (filtered_reels, raw_reels)"""
+        response = self.api.get_reels_by_hashtag(hashtag)
+        sections = response.get("response", {}).get("sections", [])
+        if not sections:
+            logger.warning("[FILTER] Нет секций в ответе HikerAPI")
+            return [], []
 
-        for r in raw:
-            try:
-                media = r.get("media", {})
-                if not media:
-                    logger.warning("[FILTER] пропущено: нет блока 'media'")
-                    continue
+        items = (
+            sections[0]
+            .get("layout_content", {})
+            .get("one_by_two_item", {})
+            .get("clips", {})
+            .get("items", [])
+        )
 
-                views = media.get("play_count", 0)
-                likes = media.get("like_count", 0)
-                comments = media.get("comment_count", 0)
-                taken_at = media.get("taken_at")
-                published_at = datetime.fromtimestamp(taken_at).date() if taken_at else None
+        raw_reels = []
+        filtered_reels = []
 
-                if views < min_views:
-                    logger.info(f"[FILTER] пропущено: views={views} < {min_views}")
-                    continue
-                if likes < min_likes:
-                    logger.info(f"[FILTER] пропущено: likes={likes} < {min_likes}")
-                    continue
-                if comments < min_comments:
-                    logger.info(f"[FILTER] пропущено: comments={comments} < {min_comments}")
-                    continue
-                if date_from and published_at and published_at < date_from:
-                    logger.info(f"[FILTER] пропущено: {published_at} < {date_from}")
-                    continue
-                if date_to and published_at and published_at > date_to:
-                    logger.info(f"[FILTER] пропущено: {published_at} > {date_to}")
-                    continue
+        for raw_item in items:
+            # Парсим данные один раз
+            reel_data = self._parse_reel_data(raw_item)
+            if not reel_data:
+                continue
 
-                caption = media.get("caption", {})
-                description = caption.get("text", "")
-                hashtags = [w for w in description.split() if w.startswith("#")]
-                hashtags_str = " ".join(hashtags)
+            # Сохраняем в raw_reels
+            raw_reels.append(reel_data)
 
-                user = media.get("user", {})
-                author_username = user.get("username", "")
-
-                video_versions = media.get("video_versions", [])
-                video_url = video_versions[0]["url"] if video_versions else ""
-
-                sound_url = media.get("progressive_download_url") or ""
-
-                results.append({
-                    "video_url": video_url,
-                    "author_username": author_username,
-                    "published_at": published_at,
-                    "description": description,
-                    "hashtags": hashtags_str,
-                    "views": views,
-                    "likes": likes,
-                    "comments": comments,
-                    "sound_url": sound_url,
-                })
-
-                if len(results) >= limit:
+            # Проверяем фильтры
+            if self._passes_filters(reel_data, min_views, min_likes, min_comments, date_from, date_to):
+                filtered_reels.append(reel_data)
+                
+                if len(filtered_reels) >= limit:
                     break
 
-            except Exception as e:
-                logger.warning(f"[FILTER] ошибка при обработке reel: {e}")
-
-        return results
-
+        logger.info(f"[FETCH] Обработано: {len(raw_reels)} raw, {len(filtered_reels)} filtered")
+        return filtered_reels, raw_reels
 
 
 # class ReelsFetcher:

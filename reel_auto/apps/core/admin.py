@@ -1,7 +1,7 @@
 import os
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import SearchTask, SearchResult
+from .models import SearchTask, SearchResult, SearchRawResult
 from core.tasks import run_search_task_async
 
 
@@ -59,3 +59,20 @@ class SearchTaskAdmin(admin.ModelAdmin):
 class SearchResultAdmin(admin.ModelAdmin):
     list_display = ('task', 'author_username', 'published_at', 'views', 'likes', 'comments')
     list_filter = ('task',)
+
+
+
+
+@admin.register(SearchRawResult)
+class SearchRawResultAdmin(admin.ModelAdmin):
+    list_display = (
+        'task',
+        'author_username',
+        'published_at',
+        'views',
+        'likes',
+        'comments',
+    )
+    list_filter = ('task', 'published_at')
+    search_fields = ('author_username', 'description', 'hashtags')
+    readonly_fields = ('video_url', 'sound_url', 'description', 'hashtags')

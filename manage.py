@@ -5,9 +5,10 @@ import sys
 
 def main():
     """Run administrative tasks."""
-    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'settings.base')
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'reel_auto.settings.base')
+
     try:
         from django.core.management import execute_from_command_line
     except ImportError as exc:
@@ -17,7 +18,6 @@ def main():
             "forget to activate a virtual environment?"
         ) from exc
     execute_from_command_line(sys.argv)
-
 
 if __name__ == '__main__':
     main()

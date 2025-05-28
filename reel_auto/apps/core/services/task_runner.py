@@ -1,8 +1,11 @@
 # core/services/task_runner.py
 import logging
+from decouple import config
+from datetime import datetime
 from core.services.hikerapi_client import HikerAPIClient
 from core.services.hiker_reels_processor import HikerReelsProcessor
-from decouple import config
+from core.models import SearchRawResult
+
 
 logger = logging.getLogger(__name__)
 
@@ -19,10 +22,11 @@ def _extract_first_hashtag(keywords: str) -> str:
 
 
 def run_task_logic(task):
-    from core.models import SearchResult
+    from core.models import SearchResult, SearchRawResult
     from io import StringIO
     from django.core.files.base import ContentFile
     import csv
+    from django.db import transaction
 
     api = HikerAPIClient(config("HIKER_API_KEY"))
     processor = HikerReelsProcessor(api)
@@ -30,14 +34,13 @@ def run_task_logic(task):
     hashtag = _extract_first_hashtag(task.keywords)
     if not hashtag:
         raise ValueError("Не указан хэштег для задачи поиска")
-    
-    logger.warning(f"[TASK #{task.id}] 🚨 Запрос к HikerAPI будет тарифицирован (~$0.02). " 
-               f"Хэштег: #{hashtag} | лимит: {task.limit} | фильтры: views>={task.views_from or 0}, "
-               f"likes>={task.likes_from or 0}, comments>={task.comments_from or 0}")
 
+    logger.warning(f"[TASK #{task.id}] 🚨 Запрос к HikerAPI будет тарифицирован (~$0.02). "
+                   f"Хэштег: #{hashtag} | лимит: {task.limit} | фильтры: views>={task.views_from or 0}, "
+                   f"likes>={task.likes_from or 0}, comments>={task.comments_from or 0}")
 
     try:
-        reels = processor.fetch_and_filter(
+        filtered_reels, raw_reels = processor.fetch_and_filter(
             hashtag=hashtag,
             min_views=task.views_from or 0,
             min_likes=task.likes_from or 0,
@@ -49,33 +52,66 @@ def run_task_logic(task):
     except Exception as e:
         logger.exception(f"[TASK #{task.id}] Ошибка при выполнении задачи: {e}")
         task.status = 'error'
+        task.error_message = str(e)
         task.save()
         return 0
 
-    for reel in reels:
-        SearchResult.objects.create(task=task, **reel)
+    # Сохраняем в БД через транзакцию
+    try:
+        with transaction.atomic():
+            # Сохраняем все сырые рилсы
+            raw_objects = []
+            for reel_data in raw_reels:
+                raw_objects.append(SearchRawResult(task=task, **reel_data))
+            
+            if raw_objects:
+                SearchRawResult.objects.bulk_create(raw_objects, ignore_conflicts=True)
+                logger.info(f"[DB] Сохранено {len(raw_objects)} raw reel(s)")
 
-    csv_buffer = StringIO()
-    writer = csv.writer(csv_buffer)
-    writer.writerow(["Ссылка", "Автор", "Дата", "Описание", "Хэштеги", "Просмотры", "Лайки", "Комментарии", "Звук"])
-    for reel in reels:
-        writer.writerow([
-            reel["video_url"],
-            reel["author_username"],
-            reel["published_at"],
-            reel["description"],
-            reel["hashtags"],
-            reel["views"],
-            reel["likes"],
-            reel["comments"],
-            reel["sound_url"]
-        ])
+            # Сохраняем отфильтрованные рилсы
+            filtered_objects = []
+            for reel_data in filtered_reels:
+                filtered_objects.append(SearchResult(task=task, **reel_data))
+            
+            if filtered_objects:
+                SearchResult.objects.bulk_create(filtered_objects, ignore_conflicts=True)
+                logger.info(f"[DB] Сохранено {len(filtered_objects)} filtered reel(s)")
 
-    filename = f"reels_task_{task.id}.csv"
-    task.csv_file.save(filename, ContentFile(csv_buffer.getvalue().encode()), save=True)
+    except Exception as e:
+        logger.exception(f"[TASK #{task.id}] Ошибка при сохранении в БД: {e}")
+        task.status = 'error'
+        task.error_message = f"Ошибка сохранения: {str(e)}"
+        task.save()
+        return 0
+
+    # Генерируем CSV
+    try:
+        csv_buffer = StringIO()
+        writer = csv.writer(csv_buffer)
+        writer.writerow(["Ссылка", "Автор", "Дата", "Описание", "Хэштеги", "Просмотры", "Лайки", "Комментарии", "Звук"])
+        
+        for reel in filtered_reels:
+            writer.writerow([
+                reel["video_url"],
+                reel["author_username"],
+                reel["published_at"],
+                reel["description"],
+                reel["hashtags"],
+                reel["views"],
+                reel["likes"],
+                reel["comments"],
+                reel["sound_url"]
+            ])
+
+        filename = f"reels_task_{task.id}.csv"
+        task.csv_file.save(filename, ContentFile(csv_buffer.getvalue().encode()), save=True)
+        
+    except Exception as e:
+        logger.warning(f"[CSV] Ошибка создания CSV: {e}")
+        # Не критично, продолжаем
 
     task.status = 'done'
     task.save()
 
-    logger.info(f"[TASK #{task.id}] Завершено. Сохранено {len(reels)} рилсов.")
-    return len(reels)
+    logger.info(f"[TASK #{task.id}] Завершено. Raw: {len(raw_reels)}, Filtered: {len(filtered_reels)}")
+    return len(filtered_reels)
