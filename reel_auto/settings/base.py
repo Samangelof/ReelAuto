@@ -14,8 +14,7 @@ from .config import (
     NAME_DATEBASE,
     USER_DATEBASE,
     PASSWORD_DATEBASE,
-    PORT_DATEBASE, 
-    ALLOWED_HOSTS
+    PORT_DATEBASE
 )
 
 
@@ -25,6 +24,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(BASE_DIR, 'apps'))
 
+ALLOWED_HOSTS = ['38.107.234.81', '127.0.0.1', 'localhost:8000']
 
 # ------------------------------------------------
 # Apps
