@@ -1,4 +1,4 @@
-# em/settings/urls.py
+# reel_auto/settings/urls.py
 """URL конфигурация проекта"""
 from django.contrib import admin
 from django.urls import path, include

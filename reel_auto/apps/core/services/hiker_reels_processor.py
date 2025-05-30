@@ -1,89 +1,8 @@
-# import logging
-# from instagrapi import Client
-# from datetime import datetime
-# from decouple import config
-
-# logger = logging.getLogger(__name__)
-
-# class ReelsFetcher:
-#     def __init__(self):
-#         logger.info("Инициализация ReelsFetcher")
-#         self.client = Client()
-#         self.client.login(config('IG_USERNAME'), config('IG_PASSWORD'))
-#         logger.info("Успешный логин в Instagram")
-
-#     def fetch_by_hashtag(self, hashtag, min_views=0, min_likes=0, min_comments=0,
-#                          date_from=None, date_to=None, limit=50):
-#         logger.info(f"Поиск по хэштегу #{hashtag}, лимит={limit}, "
-#                     f"мин. просмотров={min_views}, лайков={min_likes}, комментов={min_comments}, "
-#                     f"дата от={date_from}, до={date_to}")
-
-#         try:
-#             medias = self.client.hashtag_medias_v1(hashtag, amount=limit, tab_key="clips")
-#             logger.info(f"Получено {len(medias)} медиа из Instagram")
-#         except Exception as e:
-#             logger.error(f"Ошибка при запросе хэштега: {e}")
-#             return []
-
-#         results = []
-#         for media in medias:
-#             data = media.dict()
-
-#             # logger.debug("Media raw data: %s", str(data)[:2000])
-#             logger.debug("Media author: %s | media_type: %s", data.get("user", {}).get("username"), data.get("media_type"))
-
-#             if not data.get("video_url"):
-#                 logger.debug("Пропуск: нет video_url")
-#                 continue
-
-#             # Метрики
-#             if data.get("view_count", 0) < min_views:
-#                 logger.debug("Пропуск: мало просмотров")
-#                 continue
-#             if data.get("like_count", 0) < min_likes:
-#                 logger.debug("Пропуск: мало лайков")
-#                 continue
-#             if data.get("comment_count", 0) < min_comments:
-#                 logger.debug("Пропуск: мало комментариев")
-#                 continue
-
-#             # Дата
-#             created = data.get("taken_at")
-#             if not created:
-#                 logger.debug("Пропуск: нет даты публикации")
-#                 continue
-
-#             if date_from and created.date() < date_from:
-#                 logger.debug("Пропуск: слишком старая дата")
-#                 continue
-
-#             if date_to and created.date() > date_to:
-#                 logger.debug("Пропуск: слишком новая дата")
-#                 continue
-
-#             results.append({
-#                 "video_url": data.get("video_url"),
-#                 "author_username": data.get("user", {}).get("username"),
-#                 "published_at": created,
-#                 "description": data.get("caption_text", ""),
-#                 "hashtags": " ".join(data.get("hashtags", [])),
-#                 "views": data.get("view_count", 0),
-#                 "likes": data.get("like_count", 0),
-#                 "comments": data.get("comment_count", 0),
-#                 "sound_url": data.get("audio", {}).get("audio_url", ""),
-#             })
-
-#         logger.info(f"Итого прошло фильтры: {len(results)}")
-#         return results
-
-
-
-# Hiker
-# core/services/reels_fetcher.py
 import requests
 import logging
 from datetime import datetime
 from .hikerapi_client import HikerAPIClient
+from xml.etree import ElementTree as ET
 
 
 logger = logging.getLogger(__name__)
@@ -102,6 +21,30 @@ def safe_truncate_data(data: dict) -> dict:
         "comments": data.get("comments", 0),
         "sound_url": (data.get("sound_url") or "")[:2048],
     }
+
+
+
+def extract_sound_url(media: dict) -> str:
+    if "progressive_download_url" in media:
+        return media["progressive_download_url"]
+
+    dash_xml = (
+        media.get("music_info", {})
+        .get("music_asset_info", {})
+        .get("dash_manifest")
+    )
+
+    if dash_xml:
+        try:
+            root = ET.fromstring(dash_xml)
+            base_url = root.find(".//{urn:mpeg:dash:schema:mpd:2011}BaseURL")
+            if base_url is not None and base_url.text:
+                return base_url.text
+        except Exception as e:
+            logger.warning(f"[PARSER] ошибка при парсинге dash_manifest: {e}")
+
+    return ""
+
 
 class HikerReelsProcessor:
     def __init__(self, api_client: HikerAPIClient):
@@ -123,7 +66,8 @@ class HikerReelsProcessor:
             user = media.get("user", {})
             video_versions = media.get("video_versions", [])
             video_url = video_versions[0]["url"] if video_versions else ""
-            sound_url = media.get("progressive_download_url") or ""
+            sound_url = extract_sound_url(media)
+
 
             taken_at = media.get("taken_at")
             published_at = datetime.fromtimestamp(taken_at).date() if taken_at else None
@@ -166,6 +110,7 @@ class HikerReelsProcessor:
             logger.info(f"[FILTER] пропущено: {reel_data['published_at']} > {date_to}")
             return False
         return True
+
 
     def fetch_and_filter(
         self,
@@ -214,58 +159,3 @@ class HikerReelsProcessor:
 
         logger.info(f"[FETCH] Обработано: {len(raw_reels)} raw, {len(filtered_reels)} filtered")
         return filtered_reels, raw_reels
-
-
-# class ReelsFetcher:
-#     def __init__(self):
-#         self.token = config("HIKER_API_KEY")
-#         self.base_url = "https://api.hikerapi.com/v2"
-#         self.headers = {
-#             "x-access-key": self.token,
-#             "accept": "application/json"
-#         }
-
-#     def fetch_by_hashtag(self, hashtag, min_views=0, min_likes=0, min_comments=0,
-#                          date_from=None, date_to=None, limit=50):
-#         url = f"{self.base_url}/reels/by/hashtag"
-#         params = {
-#             "hashtag": hashtag,
-#             "min_views": min_views,
-#             "min_likes": min_likes,
-#             "min_comments": min_comments,
-#             "date_from": str(date_from) if date_from else None,
-#             "date_to": str(date_to) if date_to else None,
-#             "limit": limit
-#         }
-
-#         logger.info(f"[HIKER] GET {url} params={params}")
-#         try:
-#             resp = requests.get(url, headers=self.headers,
-#                                 params=params, timeout=15)
-#             resp.raise_for_status()
-#         except requests.HTTPError as e:
-#             logger.error(f"HIKERAPI ERROR: {resp.status_code} - {resp.text}")
-#             if resp.status_code == 402:
-#                 raise Exception("Нет доступа — ошибка оплаты HikerAPI.")
-#             raise
-#         except Exception as e:
-#             logger.exception("Ошибка соединения с HikerAPI")
-#             raise
-
-#         data = resp.json().get("data", [])
-#         logger.info(f"[HIKER] Получено {len(data)} reels")
-
-#         results = []
-#         for r in data:
-#             results.append({
-#                 "video_url": r.get("video_url"),
-#                 "author_username": r.get("author_username"),
-#                 "published_at": datetime.fromisoformat(r.get("published_at")),
-#                 "description": r.get("description", ""),
-#                 "hashtags": " ".join(r.get("hashtags") or []),
-#                 "views": r.get("views", 0),
-#                 "likes": r.get("likes", 0),
-#                 "comments": r.get("comments", 0),
-#                 "sound_url": r.get("sound_url", ""),
-#             })
-#         return results
