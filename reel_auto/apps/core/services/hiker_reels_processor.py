@@ -24,26 +24,51 @@ def safe_truncate_data(data: dict) -> dict:
 
 
 
-def extract_sound_url(media: dict) -> str:
-    if "progressive_download_url" in media:
-        return media["progressive_download_url"]
 
+def extract_sound_url(media: dict) -> str:
+    logger.info(f"[SOUND] media.keys: {list(media.keys())}")
+
+    if media.get("music_metadata") is None:
+        logger.warning(f"[SOUND] media['music_metadata'] is None")
+
+    # 1. Progressive download
+    url1 = media.get("progressive_download_url")
+    if url1:
+        logger.info(f"[SOUND] Найден progressive_download_url: {url1}")
+        return url1
+
+    # 2. Clips metadata fallback
+    clips_meta = media.get("clips_metadata")
+    if clips_meta:
+        logger.info(f"[SOUND] clips_metadata: {clips_meta}")
+        audio_url = clips_meta.get("original_sound_info", {}).get("progressive_download_url")
+        if audio_url:
+            logger.info(f"[SOUND] Найден clips_metadata.original_sound_info.progressive_download_url: {audio_url}")
+            return audio_url
+
+    # 3. Dash manifest fallback
     dash_xml = (
-        media.get("music_info", {})
+        media.get("music_metadata", {})
+        .get("music_info", {})
         .get("music_asset_info", {})
         .get("dash_manifest")
     )
-
     if dash_xml:
         try:
             root = ET.fromstring(dash_xml)
             base_url = root.find(".//{urn:mpeg:dash:schema:mpd:2011}BaseURL")
             if base_url is not None and base_url.text:
+                logger.info(f"[SOUND] Найден BaseURL в dash_manifest: {base_url.text}")
                 return base_url.text
         except Exception as e:
-            logger.warning(f"[PARSER] ошибка при парсинге dash_manifest: {e}")
+            logger.warning(f"[SOUND] ошибка при парсинге dash_manifest: {e}")
 
+    logger.warning("[SOUND] Не удалось найти ссылку на звук")
     return ""
+
+
+
+
 
 
 class HikerReelsProcessor:
